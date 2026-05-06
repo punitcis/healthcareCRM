@@ -22,14 +22,14 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
-import { mockCases, mockFollowUps, mockAuditLog } from '@/lib/mock-data'
 import {
   getRiskBadgeColor,
   getCaseStatusColor,
   formatDate,
 } from '@/lib/utils'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { use } from 'react'
+import { use, useState, useEffect } from 'react'
+import { Case, FollowUp, AuditEntry } from '@/lib/types'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -38,15 +38,42 @@ interface PageProps {
 export default function CaseDetailPage({ params }: PageProps) {
   const { id } = use(params)
   const { t, lang } = useLanguage()
+  const [caseData, setCaseData] = useState<(Case & { auditLogs?: AuditEntry[]; followUps?: FollowUp[] }) | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [notFoundState, setNotFoundState] = useState(false)
 
-  const caseData = mockCases.find((c) => c.id === id)
+  useEffect(() => {
+    fetch(`/api/cases/${id}`)
+      .then((r) => {
+        if (r.status === 404) { setNotFoundState(true); return null }
+        return r.json()
+      })
+      .then((data) => {
+        if (data) setCaseData(data)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [id])
 
-  if (!caseData) {
+  if (loading) {
+    return (
+      <div className="p-6 space-y-4 max-w-5xl mx-auto">
+        <div className="h-6 w-32 bg-gray-200 rounded animate-pulse" />
+        <div className="h-16 bg-gray-100 rounded-xl animate-pulse" />
+        <div className="grid grid-cols-2 gap-4">
+          <div className="h-48 bg-gray-100 rounded-xl animate-pulse" />
+          <div className="h-48 bg-gray-100 rounded-xl animate-pulse" />
+        </div>
+      </div>
+    )
+  }
+
+  if (notFoundState || !caseData) {
     notFound()
   }
 
-  const caseFollowUps = mockFollowUps.filter((f) => f.caseId === caseData.id)
-  const auditLog = mockAuditLog.filter((a) => a.caseId === caseData.id)
+  const caseFollowUps = (caseData as any).followUps ?? []
+  const auditLog = (caseData as any).auditLogs ?? []
 
   const cssrs = caseData.cssrsScore
 
@@ -403,7 +430,7 @@ export default function CaseDetailPage({ params }: PageProps) {
         {/* Follow-up tab */}
         <TabsContent value="followup" className="space-y-4">
           {caseFollowUps.length > 0 ? (
-            caseFollowUps.map((fu) => (
+            caseFollowUps.map((fu: any) => (
               <Card key={fu.id} className={`${
                 fu.status === 'overdue' ? 'border-red-200 bg-red-50/30' :
                 fu.status === 'completed' ? 'border-green-200 bg-green-50/30' : 'border-amber-200 bg-amber-50/30'
@@ -421,7 +448,7 @@ export default function CaseDetailPage({ params }: PageProps) {
                            fu.status === 'completed' ? t.followups.statusCompleted : t.followups.statusPending}
                         </span>
                         <span className={`text-xs px-2 py-0.5 rounded-full border ${getRiskBadgeColor(fu.priority)}`}>
-                          {t.followups.colPriority}: {t.risk[fu.priority]}
+                          {t.followups.colPriority}: {t.risk[fu.priority as keyof typeof t.risk]}
                         </span>
                       </div>
                       <div className="flex items-center gap-4 text-xs text-gray-600 mb-2">
@@ -474,7 +501,7 @@ export default function CaseDetailPage({ params }: PageProps) {
           {auditLog.length > 0 ? (
             <div className="relative">
               <div className="absolute left-5 top-0 bottom-0 w-0.5 bg-gray-200" />
-              {auditLog.map((entry) => (
+              {auditLog.map((entry: any) => (
                 <div key={entry.id} className="flex gap-4 pl-4 pb-4 relative">
                   <div className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 border-2 border-white shrink-0 z-10">
                     <div className="w-2 h-2 rounded-full bg-blue-600" />

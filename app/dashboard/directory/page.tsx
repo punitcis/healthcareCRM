@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import {
   Search,
   Phone,
@@ -24,9 +24,9 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { mockServices } from '@/lib/mock-data'
 import { getServiceTypeColor } from '@/lib/utils'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { Service } from '@/lib/types'
 
 const serviceIcons: Record<string, React.ElementType> = {
   cmhc: Building2,
@@ -43,28 +43,32 @@ export default function DirectoryPage() {
   const [provinceFilter, setProvinceFilter] = useState('all')
   const [only24h, setOnly24h] = useState(false)
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null)
+  const [services, setServices] = useState<Service[]>([])
+  const [loading, setLoading] = useState(true)
   const { t, lang } = useLanguage()
 
-  const provinces = [...new Set(mockServices.map((s) => s.province))].sort()
+  useEffect(() => {
+    setLoading(true)
+    const params = new URLSearchParams()
+    if (typeFilter !== 'all') params.set('type', typeFilter)
+    if (provinceFilter !== 'all') params.set('province', provinceFilter)
+    if (search) params.set('search', search)
+    fetch(`/api/directory?${params}`)
+      .then((r) => r.json())
+      .then((data) => {
+        setServices(Array.isArray(data) ? data : [])
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [typeFilter, provinceFilter, search])
+
+  const provinces = [...new Set(services.map((s) => s.province))].sort()
 
   const filtered = useMemo(() => {
-    let result = [...mockServices]
-    if (search) {
-      const q = search.toLowerCase()
-      result = result.filter(
-        (s) =>
-          s.name.toLowerCase().includes(q) ||
-          s.municipality.toLowerCase().includes(q) ||
-          s.province.toLowerCase().includes(q) ||
-          s.address.toLowerCase().includes(q) ||
-          s.phone.includes(q)
-      )
-    }
-    if (typeFilter !== 'all') result = result.filter((s) => s.type === typeFilter)
-    if (provinceFilter !== 'all') result = result.filter((s) => s.province === provinceFilter)
+    let result = [...services]
     if (only24h) result = result.filter((s) => s.available24h)
     return result
-  }, [search, typeFilter, provinceFilter, only24h])
+  }, [services, only24h])
 
   const copyPhone = async (phone: string) => {
     await navigator.clipboard.writeText(phone)
@@ -73,10 +77,10 @@ export default function DirectoryPage() {
   }
 
   const stats = {
-    total: mockServices.length,
-    h24: mockServices.filter((s) => s.available24h).length,
-    cmhc: mockServices.filter((s) => s.type === 'cmhc').length,
-    emergency: mockServices.filter((s) => s.type === 'emergency' || s.type === 'hospital').length,
+    total: services.length,
+    h24: services.filter((s) => s.available24h).length,
+    cmhc: services.filter((s) => s.type === 'cmhc').length,
+    emergency: services.filter((s) => s.type === 'emergency' || s.type === 'hospital').length,
   }
 
   const getServiceTypeLabel = (type: string): string => {

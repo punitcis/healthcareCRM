@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import {
   Calendar,
   Clock,
@@ -18,38 +18,65 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { mockFollowUps } from '@/lib/mock-data'
 import { getRiskBadgeColor, formatDate } from '@/lib/utils'
 import Link from 'next/link'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { FollowUp } from '@/lib/types'
 
 export default function FollowUpsPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [priorityFilter, setPriorityFilter] = useState('all')
   const [operatorFilter, setOperatorFilter] = useState('all')
+  const [followUps, setFollowUps] = useState<FollowUp[]>([])
+  const [loading, setLoading] = useState(true)
   const { t, lang } = useLanguage()
 
+  const fetchFollowUps = useCallback(() => {
+    setLoading(true)
+    const params = new URLSearchParams()
+    if (statusFilter !== 'all') params.set('status', statusFilter)
+    fetch(`/api/followups?${params}`)
+      .then((r) => r.json())
+      .then((data) => {
+        setFollowUps(Array.isArray(data) ? data : [])
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [statusFilter])
+
+  useEffect(() => {
+    fetchFollowUps()
+  }, [fetchFollowUps])
+
+  const handleMarkComplete = async (id: string) => {
+    await fetch(`/api/followups/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'completed', completedDate: new Date().toISOString() }),
+    })
+    fetchFollowUps()
+  }
+
   const filtered = useMemo(() => {
-    let result = [...mockFollowUps]
-    if (statusFilter !== 'all') result = result.filter((f) => f.status === statusFilter)
+    let result = [...followUps]
     if (priorityFilter !== 'all') result = result.filter((f) => f.priority === priorityFilter)
     if (operatorFilter !== 'all') result = result.filter((f) => f.operatorName === operatorFilter)
 
     // Sort: overdue first, then pending by date, then completed
     return result.sort((a, b) => {
-      const order = { overdue: 0, pending: 1, completed: 2, cancelled: 3 }
-      if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status]
+      const order: Record<string, number> = { overdue: 0, pending: 1, completed: 2, cancelled: 3 }
+      if (order[a.status] !== order[b.status]) return (order[a.status] ?? 4) - (order[b.status] ?? 4)
       return new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime()
     })
-  }, [statusFilter, priorityFilter, operatorFilter])
+  }, [followUps, priorityFilter, operatorFilter])
 
   const stats = {
-    pending: mockFollowUps.filter((f) => f.status === 'pending').length,
-    overdue: mockFollowUps.filter((f) => f.status === 'overdue').length,
-    completedThisWeek: mockFollowUps.filter((f) => f.status === 'completed').length,
+    pending: followUps.filter((f) => f.status === 'pending').length,
+    overdue: followUps.filter((f) => f.status === 'overdue').length,
+    completedThisWeek: followUps.filter((f) => f.status === 'completed').length,
     compliance: Math.round(
-      (mockFollowUps.filter((f) => f.status === 'completed').length /
-        Math.max(mockFollowUps.filter((f) => f.status !== 'cancelled').length, 1)) *
+      (followUps.filter((f) => f.status === 'completed').length /
+        Math.max(followUps.filter((f) => f.status !== 'cancelled').length, 1)) *
         100
     ),
   }
@@ -64,7 +91,7 @@ export default function FollowUpsPage() {
   const locale = lang === 'it' ? 'it-IT' : 'en-GB'
 
   const groupedByDate = useMemo(() => {
-    const groups: Record<string, typeof mockFollowUps> = {}
+    const groups: Record<string, FollowUp[]> = {}
     filtered.forEach((fu) => {
       const date = new Date(fu.scheduledDate).toLocaleDateString(locale, {
         weekday: 'long',
@@ -294,7 +321,7 @@ export default function FollowUpsPage() {
                               <RotateCcw className="w-3 h-3" />
                               {t.followups.reschedule}
                             </Button>
-                            <Button size="sm" variant="success" className="text-xs h-7">
+                            <Button size="sm" variant="success" className="text-xs h-7" onClick={() => handleMarkComplete(fu.id)}>
                               <CheckCircle2 className="w-3 h-3" />
                               {t.followups.markComplete}
                             </Button>

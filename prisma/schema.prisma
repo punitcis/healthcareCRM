@@ -1,0 +1,148 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum UserRole {
+  operator
+  coordinator
+  supervisor
+  admin
+}
+
+enum RiskLevel {
+  low
+  moderate
+  high
+  critical
+}
+
+enum CaseStatus {
+  open
+  follow_up
+  closed
+  escalated
+}
+
+enum CallStatus {
+  incoming
+  active
+  on_hold
+  completed
+  abandoned
+}
+
+enum FollowUpStatus {
+  pending
+  completed
+  overdue
+  cancelled
+}
+
+enum ServiceType {
+  cmhc
+  hospital
+  emergency
+  social
+  police
+  other
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      UserRole @default(operator)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  cases     Case[]   @relation("OperatorCases")
+  followUps FollowUp[] @relation("OperatorFollowUps")
+  auditLogs AuditLog[]
+}
+
+model Case {
+  id                String     @id @default(cuid())
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  status            CaseStatus @default(open)
+  operatorId        String
+  operator          User       @relation("OperatorCases", fields: [operatorId], references: [id])
+  ageRange          String?
+  gender            String?
+  region            String?
+  municipality      String?
+  primaryReason     String
+  contextualElements String[]
+  riskLevel         RiskLevel  @default(low)
+  cssrsData         Json?
+  interventionTypes  String[]
+  referrals         String[]
+  followUpRequired  Boolean    @default(false)
+  followUpDate      DateTime?
+  notes             String?
+  outcome           String?
+  followUps         FollowUp[]
+  auditLogs         AuditLog[]
+}
+
+model Call {
+  id              String     @id @default(cuid())
+  callerId        String
+  callerAnonymous Boolean    @default(true)
+  startTime       DateTime   @default(now())
+  endTime         DateTime?
+  duration        Int?
+  status          CallStatus @default(incoming)
+  operatorId      String?
+  riskLevel       RiskLevel?
+  caseId          String?
+}
+
+model FollowUp {
+  id            String         @id @default(cuid())
+  caseId        String
+  case          Case           @relation(fields: [caseId], references: [id])
+  callerId      String?
+  scheduledDate DateTime
+  completedDate DateTime?
+  status        FollowUpStatus @default(pending)
+  priority      RiskLevel      @default(low)
+  operatorId    String
+  operator      User           @relation("OperatorFollowUps", fields: [operatorId], references: [id])
+  notes         String?
+  outcome       String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model Service {
+  id           String      @id @default(cuid())
+  name         String
+  type         ServiceType @default(other)
+  municipality String
+  province     String
+  postalCode   String
+  address      String
+  phone        String
+  email        String?
+  hours        String
+  available24h Boolean     @default(false)
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  caseId    String
+  case      Case     @relation(fields: [caseId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  userName  String
+  action    String
+  details   String?
+  createdAt DateTime @default(now())
+}

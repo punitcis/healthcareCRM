@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import Link from 'next/link'
 import {
   Search,
@@ -18,13 +18,12 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
-import { mockCases } from '@/lib/mock-data'
 import {
   getRiskBadgeColor,
   getCaseStatusColor,
   formatDate,
 } from '@/lib/utils'
-import { RiskLevel, CaseStatus } from '@/lib/types'
+import { Case } from '@/lib/types'
 import { useLanguage } from '@/contexts/LanguageContext'
 
 export default function CasesPage() {
@@ -33,27 +32,29 @@ export default function CasesPage() {
   const [riskFilter, setRiskFilter] = useState('all')
   const [operatorFilter, setOperatorFilter] = useState('all')
   const [sortBy, setSortBy] = useState('newest')
+  const [cases, setCases] = useState<Case[]>([])
+  const [loading, setLoading] = useState(true)
   const { t, lang } = useLanguage()
 
-  const filtered = useMemo(() => {
-    let result = [...mockCases]
+  useEffect(() => {
+    setLoading(true)
+    const params = new URLSearchParams()
+    if (statusFilter !== 'all') params.set('status', statusFilter)
+    if (riskFilter !== 'all') params.set('riskLevel', riskFilter)
+    if (search) params.set('search', search)
 
-    if (search) {
-      const q = search.toLowerCase()
-      result = result.filter(
-        (c) =>
-          c.id.toLowerCase().includes(q) ||
-          c.primaryReason.toLowerCase().includes(q) ||
-          c.municipality.toLowerCase().includes(q) ||
-          c.operatorName.toLowerCase().includes(q)
-      )
-    }
-    if (statusFilter !== 'all') {
-      result = result.filter((c) => c.status === statusFilter)
-    }
-    if (riskFilter !== 'all') {
-      result = result.filter((c) => c.riskLevel === riskFilter)
-    }
+    fetch(`/api/cases?${params}`)
+      .then((r) => r.json())
+      .then((data) => {
+        setCases(Array.isArray(data) ? data : [])
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [statusFilter, riskFilter, search])
+
+  const filtered = useMemo(() => {
+    let result = [...cases]
+
     if (operatorFilter !== 'all') {
       result = result.filter((c) => c.operatorName === operatorFilter)
     }
@@ -62,20 +63,20 @@ export default function CasesPage() {
       if (sortBy === 'newest') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       if (sortBy === 'oldest') return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
       if (sortBy === 'risk') {
-        const order = { critical: 0, high: 1, moderate: 2, low: 3 }
-        return order[a.riskLevel] - order[b.riskLevel]
+        const order: Record<string, number> = { critical: 0, high: 1, moderate: 2, low: 3 }
+        return (order[a.riskLevel] ?? 4) - (order[b.riskLevel] ?? 4)
       }
       return 0
     })
 
     return result
-  }, [search, statusFilter, riskFilter, operatorFilter, sortBy])
+  }, [cases, operatorFilter, sortBy])
 
   const stats = {
-    total: mockCases.length,
-    open: mockCases.filter((c) => c.status === 'open').length,
-    followUp: mockCases.filter((c) => c.status === 'follow-up').length,
-    critical: mockCases.filter((c) => c.riskLevel === 'critical' || c.riskLevel === 'high').length,
+    total: cases.length,
+    open: cases.filter((c) => c.status === 'open').length,
+    followUp: cases.filter((c) => c.status === 'follow-up').length,
+    critical: cases.filter((c) => c.riskLevel === 'critical' || c.riskLevel === 'high').length,
   }
 
   const locale = lang === 'it' ? 'it-IT' : 'en-GB'
@@ -87,7 +88,7 @@ export default function CasesPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{t.cases.title}</h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            {filtered.length} {t.cases.noCases.replace('Nessun caso trovato', 'casos').replace('No cases found', 'cases')} — {mockCases.length} {t.cases.totalCases}
+            {filtered.length} {lang === 'it' ? 'casi' : 'cases'} — {cases.length} {t.cases.totalCases}
           </p>
         </div>
         <Button>
@@ -206,7 +207,15 @@ export default function CasesPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((c, idx) => (
+              {loading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i} className="border-b border-gray-50">
+                    <td colSpan={9} className="px-4 py-4">
+                      <div className="h-4 bg-gray-100 rounded animate-pulse" />
+                    </td>
+                  </tr>
+                ))
+              ) : filtered.map((c) => (
                 <tr
                   key={c.id}
                   className={`border-b border-gray-50 hover:bg-blue-50/40 transition-colors group ${
@@ -239,12 +248,12 @@ export default function CasesPage() {
                     <span
                       className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${getCaseStatusColor(c.status)}`}
                     >
-                      {t.caseStatus[c.status]}
+                      {t.caseStatus[c.status as keyof typeof t.caseStatus]}
                     </span>
                   </td>
                   <td className="px-4 py-3.5 hidden md:table-cell">
                     <p className="text-xs text-gray-700 max-w-48 truncate">{c.primaryReason}</p>
-                    {c.contextualElements.length > 0 && (
+                    {c.contextualElements && c.contextualElements.length > 0 && (
                       <p className="text-xs text-gray-400 mt-0.5 truncate">
                         {c.contextualElements.slice(0, 2).join(', ')}
                         {c.contextualElements.length > 2 && ` +${c.contextualElements.length - 2}`}
@@ -261,9 +270,9 @@ export default function CasesPage() {
                   <td className="px-4 py-3.5 hidden lg:table-cell">
                     <div className="flex items-center gap-1.5">
                       <div className="flex items-center justify-center w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold">
-                        {c.operatorName.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                        {c.operatorName?.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
                       </div>
-                      <span className="text-xs text-gray-700">{c.operatorName.split(' ')[0]}</span>
+                      <span className="text-xs text-gray-700">{c.operatorName?.split(' ')[0]}</span>
                     </div>
                   </td>
                   <td className="px-4 py-3.5 hidden xl:table-cell">
@@ -298,7 +307,7 @@ export default function CasesPage() {
                 </tr>
               ))}
 
-              {filtered.length === 0 && (
+              {!loading && filtered.length === 0 && (
                 <tr>
                   <td colSpan={9} className="px-4 py-16 text-center">
                     <FolderOpen className="w-10 h-10 text-gray-200 mx-auto mb-3" />

@@ -20,33 +20,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
-import { mockCalls, mockCases, mockFollowUps, mockUsers } from '@/lib/mock-data'
 import { getRiskBadgeColor, getCallDuration, formatDate } from '@/lib/utils'
 import Link from 'next/link'
 import { useLanguage } from '@/contexts/LanguageContext'
-
-const operatorData = [
-  {
-    id: 'u1',
-    name: 'Maria Rossi',
-    status: 'busy',
-    callsToday: 18,
-    avgDuration: 22.4,
-    highRiskCases: 3,
-    currentCallDuration: '12:34',
-    lastActivity: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 'u2',
-    name: 'Luca Bianchi',
-    status: 'busy',
-    callsToday: 14,
-    avgDuration: 26.1,
-    highRiskCases: 2,
-    currentCallDuration: '05:17',
-    lastActivity: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
-  },
-]
+import { Case } from '@/lib/types'
 
 const alertsData = [
   {
@@ -75,14 +52,38 @@ const alertsData = [
   },
 ]
 
+interface SupervisionData {
+  activeCalls: any[]
+  queueCalls: any[]
+  openHighRisk: Case[]
+  operatorStats: any[]
+}
+
 export default function SupervisionPage() {
   const [liveTimers, setLiveTimers] = useState<Record<string, string>>({})
+  const [supervisionData, setSupervisionData] = useState<SupervisionData>({
+    activeCalls: [],
+    queueCalls: [],
+    openHighRisk: [],
+    operatorStats: [],
+  })
+  const [loading, setLoading] = useState(true)
   const { t, lang } = useLanguage()
-  const activeCalls = mockCalls.filter((c) => c.status === 'active' || c.status === 'on-hold')
-  const queueCalls = mockCalls.filter((c) => c.status === 'incoming')
-  const openHighRisk = mockCases.filter(
-    (c) => (c.riskLevel === 'critical' || c.riskLevel === 'high') && c.status !== 'closed'
-  )
+
+  useEffect(() => {
+    fetch('/api/supervision')
+      .then((r) => r.json())
+      .then((data) => {
+        setSupervisionData(data)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const activeCalls = supervisionData.activeCalls
+  const queueCalls = supervisionData.queueCalls
+  const openHighRisk = supervisionData.openHighRisk
+  const operatorStats = supervisionData.operatorStats
 
   const statusConfig = {
     available: { label: t.supervision.statusAvailable, color: 'bg-green-500', icon: Wifi, textColor: 'text-green-700', bg: 'bg-green-50' },
@@ -102,7 +103,7 @@ export default function SupervisionPage() {
     update()
     const interval = setInterval(update, 1000)
     return () => clearInterval(interval)
-  }, [])
+  }, [activeCalls])
 
   return (
     <div className="p-6 space-y-6">
@@ -186,8 +187,8 @@ export default function SupervisionPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {operatorData.map((op) => {
-                const status = statusConfig[op.status as keyof typeof statusConfig]
+              {operatorStats.map((op) => {
+                const status = statusConfig[op.status as keyof typeof statusConfig] ?? statusConfig.available
                 const StatusIcon = status.icon
                 return (
                   <div
@@ -199,7 +200,7 @@ export default function SupervisionPage() {
                       <div className="flex items-center gap-3">
                         <div className="flex items-center justify-center w-10 h-10 rounded-full bg-white border-2 border-gray-200">
                           <span className="text-sm font-bold text-gray-700">
-                            {op.name.split(' ').map((n) => n[0]).join('')}
+                            {op.name.split(' ').map((n: string) => n[0]).join('')}
                           </span>
                         </div>
                         <div>
@@ -275,7 +276,7 @@ export default function SupervisionPage() {
                           </span>
                           {call.riskLevel && (
                             <span className={`text-xs px-1.5 py-0.5 rounded border font-medium ${getRiskBadgeColor(call.riskLevel)}`}>
-                              {t.risk[call.riskLevel]}
+                              {t.risk[call.riskLevel as keyof typeof t.risk]}
                             </span>
                           )}
                           <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${

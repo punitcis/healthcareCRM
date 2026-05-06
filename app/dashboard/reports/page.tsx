@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   BarChart3,
   Download,
@@ -35,8 +35,8 @@ import {
   Pie,
   Cell,
 } from 'recharts'
-import { mockKPIData, mockCases, mockFollowUps } from '@/lib/mock-data'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { KPIData, Case, FollowUp } from '@/lib/types'
 
 const riskColors = {
   critical: '#dc2626',
@@ -73,20 +73,37 @@ const riskTrend = [
 
 export default function ReportsPage() {
   const [dateRange, setDateRange] = useState('month')
+  const [kpiData, setKpiData] = useState<KPIData | null>(null)
+  const [cases, setCases] = useState<Case[]>([])
+  const [followUps, setFollowUps] = useState<FollowUp[]>([])
   const { t, lang } = useLanguage()
+
+  useEffect(() => {
+    Promise.all([
+      fetch('/api/dashboard/kpis').then((r) => r.json()),
+      fetch('/api/cases').then((r) => r.json()),
+      fetch('/api/followups').then((r) => r.json()),
+    ])
+      .then(([kpis, casesData, fuData]) => {
+        setKpiData(kpis)
+        setCases(Array.isArray(casesData) ? casesData : [])
+        setFollowUps(Array.isArray(fuData) ? fuData : [])
+      })
+      .catch(() => {})
+  }, [])
 
   const locale = lang === 'it' ? 'it-IT' : 'en-GB'
 
-  const totalCalls = mockKPIData.callsTrend.reduce((sum, d) => sum + d.calls, 0)
-  const totalAbandoned = mockKPIData.callsTrend.reduce((sum, d) => sum + d.abandoned, 0)
-  const openCases = mockCases.filter((c) => c.status !== 'closed').length
-  const closedCases = mockCases.filter((c) => c.status === 'closed').length
-  const followUpCompleted = mockFollowUps.filter((f) => f.status === 'completed').length
-  const followUpTotal = mockFollowUps.filter((f) => f.status !== 'cancelled').length
+  const totalCalls = (kpiData?.callsTrend ?? []).reduce((sum, d) => sum + d.calls, 0)
+  const totalAbandoned = (kpiData?.callsTrend ?? []).reduce((sum, d) => sum + d.abandoned, 0)
+  const openCases = cases.filter((c) => c.status !== 'closed').length
+  const closedCases = cases.filter((c) => c.status === 'closed').length
+  const followUpCompleted = followUps.filter((f) => f.status === 'completed').length
+  const followUpTotal = followUps.filter((f) => f.status !== 'cancelled').length
 
   const handleExportCSV = () => {
     const headers = [t.cases.colId, t.cases.colDate, t.cases.colRisk, t.cases.colStatus, t.cases.colReason, t.cases.colMunicipality, t.cases.colOperator, t.caseDetail.outcome]
-    const rows = mockCases.map((c) => [
+    const rows = cases.map((c) => [
       c.id,
       new Date(c.createdAt).toLocaleDateString(locale),
       t.risk[c.riskLevel],
@@ -166,7 +183,7 @@ export default function ReportsPage() {
           },
           {
             label: lang === 'it' ? 'Casi Gestiti' : 'Managed Cases',
-            value: mockCases.length,
+            value: cases.length,
             sub: `${closedCases} ${lang === 'it' ? 'chiusi' : 'closed'}, ${openCases} ${lang === 'it' ? 'aperti' : 'open'}`,
             trend: '+8%',
             trendUp: true,
@@ -229,7 +246,7 @@ export default function ReportsPage() {
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={280}>
-                <LineChart data={mockKPIData.callsTrend}>
+                <LineChart data={kpiData?.callsTrend ?? []}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="date" tick={{ fontSize: 12, fill: '#6b7280' }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 12, fill: '#6b7280' }} axisLine={false} tickLine={false} />
@@ -257,9 +274,9 @@ export default function ReportsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {mockKPIData.callsTrend.map((row, idx) => {
-                    const rate = ((row.abandoned / row.calls) * 100).toFixed(1)
-                    const prevCalls = idx > 0 ? mockKPIData.callsTrend[idx - 1].calls : row.calls
+                  {(kpiData?.callsTrend ?? []).map((row, idx) => {
+                    const rate = ((row.abandoned / Math.max(row.calls, 1)) * 100).toFixed(1)
+                    const prevCalls = idx > 0 ? (kpiData?.callsTrend ?? [])[idx - 1].calls : row.calls
                     const trend = row.calls >= prevCalls
                     return (
                       <tr key={row.date} className="border-b border-gray-50 hover:bg-gray-50">
@@ -316,14 +333,14 @@ export default function ReportsPage() {
                 <CardTitle className="text-sm">{lang === 'it' ? 'Riepilogo per Livello di Rischio' : 'Summary by Risk Level'}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {mockKPIData.callsByRisk.map((item) => (
+                {(kpiData?.callsByRisk ?? []).map((item) => (
                   <div key={item.level}>
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-sm text-gray-700">{item.level}</span>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-bold text-gray-900">{item.count}</span>
                         <span className="text-xs text-gray-400">
-                          ({Math.round((item.count / mockKPIData.callsByRisk.reduce((s, r) => s + r.count, 0)) * 100)}%)
+                          ({Math.round((item.count / Math.max((kpiData?.callsByRisk ?? []).reduce((s, r) => s + r.count, 0), 1)) * 100)}%)
                         </span>
                       </div>
                     </div>
@@ -331,7 +348,7 @@ export default function ReportsPage() {
                       <div
                         className="h-full rounded-full"
                         style={{
-                          width: `${(item.count / mockKPIData.callsByRisk.reduce((s, r) => s + r.count, 0)) * 100}%`,
+                          width: `${(item.count / Math.max((kpiData?.callsByRisk ?? []).reduce((s, r) => s + r.count, 0), 1)) * 100}%`,
                           backgroundColor: item.color,
                         }}
                       />
@@ -349,7 +366,7 @@ export default function ReportsPage() {
             {[
               { label: lang === 'it' ? 'Totale Follow-up' : 'Total Follow-ups', value: followUpTotal },
               { label: t.followups.statusCompleted, value: followUpCompleted, color: 'text-green-700' },
-              { label: t.followups.overdue, value: mockFollowUps.filter(f => f.status === 'overdue').length, color: 'text-red-700' },
+              { label: t.followups.overdue, value: followUps.filter(f => f.status === 'overdue').length, color: 'text-red-700' },
             ].map((s) => (
               <div key={s.label} className="p-4 bg-white border border-gray-200 rounded-xl text-center">
                 <p className={`text-3xl font-bold ${s.color || 'text-gray-900'}`}>{s.value}</p>
@@ -371,7 +388,7 @@ export default function ReportsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {mockFollowUps.map((fu) => (
+                  {followUps.map((fu) => (
                     <tr key={fu.id} className="border-b border-gray-50 hover:bg-gray-50">
                       <td className="py-2 px-3 font-mono text-xs text-blue-700">#{fu.caseId.slice(-6)}</td>
                       <td className="py-2 px-3 text-xs text-gray-700">{fu.callerId}</td>

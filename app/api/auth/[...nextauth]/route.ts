@@ -1,6 +1,8 @@
 import NextAuth from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import { mockUsers } from '@/lib/mock-data'
+import prisma from '@/lib/prisma'
+import bcrypt from 'bcryptjs'
 
 const handler = NextAuth({
   providers: [
@@ -15,16 +17,18 @@ const handler = NextAuth({
           return null
         }
 
-        const user = mockUsers.find(
-          (u) => u.email === credentials.email && u.password === credentials.password
-        )
-
-        if (user) {
-          return {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            role: user.role,
+        try {
+          const dbUser = await prisma.user.findUnique({ where: { email: credentials.email } })
+          if (dbUser && await bcrypt.compare(credentials.password, dbUser.password)) {
+            return { id: dbUser.id, name: dbUser.name, email: dbUser.email, role: dbUser.role }
+          }
+        } catch {
+          // fallback to mock users
+          const mockUser = mockUsers.find(
+            (u) => u.email === credentials.email && u.password === credentials.password
+          )
+          if (mockUser) {
+            return { id: mockUser.id, name: mockUser.name, email: mockUser.email, role: mockUser.role }
           }
         }
 

@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import {
   Phone,
   Clock,
@@ -19,17 +20,55 @@ import {
 } from '@/components/dashboard/Charts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { mockKPIData, mockCases } from '@/lib/mock-data'
 import { getRiskBadgeColor, formatDate } from '@/lib/utils'
 import Link from 'next/link'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { KPIData, Case } from '@/lib/types'
 
 export default function DashboardPage() {
   const { t, lang } = useLanguage()
-  const recentCases = mockCases.slice(0, 5)
-  const highRiskAlerts = mockCases.filter(
+  const [kpiData, setKpiData] = useState<KPIData | null>(null)
+  const [recentCases, setRecentCases] = useState<Case[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    Promise.all([
+      fetch('/api/dashboard/kpis').then((r) => r.json()),
+      fetch('/api/cases').then((r) => r.json()),
+    ])
+      .then(([kpis, cases]) => {
+        setKpiData(kpis)
+        setRecentCases(Array.isArray(cases) ? cases.slice(0, 5) : [])
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const highRiskAlerts = recentCases.filter(
     (c) => (c.riskLevel === 'critical' || c.riskLevel === 'high') && c.status !== 'closed'
   )
+
+  if (loading) {
+    return (
+      <div className="p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="h-7 w-48 bg-gray-200 rounded animate-pulse" />
+            <div className="h-4 w-64 bg-gray-100 rounded animate-pulse mt-2" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-28 bg-gray-100 rounded-xl animate-pulse" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2 h-64 bg-gray-100 rounded-xl animate-pulse" />
+          <div className="h-64 bg-gray-100 rounded-xl animate-pulse" />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -57,7 +96,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <StatsCard
           title={t.dashboard.totalCalls}
-          value={mockKPIData.totalCalls}
+          value={kpiData?.totalCalls ?? 0}
           subtitle={t.dashboard.totalCallsSub}
           icon={Phone}
           trend={{ value: 12, positive: true }}
@@ -65,7 +104,7 @@ export default function DashboardPage() {
         />
         <StatsCard
           title={t.dashboard.avgWait}
-          value={`${mockKPIData.avgWaitTime} min`}
+          value={`${kpiData?.avgWaitTime ?? 0} min`}
           subtitle={t.dashboard.avgWaitSub}
           icon={Clock}
           trend={{ value: 8, positive: false }}
@@ -73,7 +112,7 @@ export default function DashboardPage() {
         />
         <StatsCard
           title={t.dashboard.abandonRate}
-          value={`${mockKPIData.abandonRate}%`}
+          value={`${kpiData?.abandonRate ?? 0}%`}
           subtitle={t.dashboard.abandonRateSub}
           icon={TrendingDown}
           trend={{ value: 2, positive: true }}
@@ -81,7 +120,7 @@ export default function DashboardPage() {
         />
         <StatsCard
           title={t.dashboard.highRisk}
-          value={mockKPIData.highRiskCases}
+          value={kpiData?.highRiskCases ?? 0}
           subtitle={t.dashboard.highRiskSub}
           icon={AlertTriangle}
           color="red"
@@ -95,7 +134,7 @@ export default function DashboardPage() {
         />
         <StatsCard
           title={t.dashboard.followUpCompliance}
-          value={`${mockKPIData.followUpCompliance}%`}
+          value={`${kpiData?.followUpCompliance ?? 0}%`}
           subtitle={t.dashboard.followUpComplianceSub}
           icon={CheckCircle2}
           trend={{ value: 5, positive: true }}
@@ -104,18 +143,22 @@ export default function DashboardPage() {
       </div>
 
       {/* Charts row 1 */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2">
-          <CallsTrendChart data={mockKPIData} />
-        </div>
-        <RiskDistributionChart data={mockKPIData} />
-      </div>
+      {kpiData && (
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-2">
+              <CallsTrendChart data={kpiData} />
+            </div>
+            <RiskDistributionChart data={kpiData} />
+          </div>
 
-      {/* Charts row 2 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <CallsByHourChart data={mockKPIData} />
-        <OutcomeDistributionChart data={mockKPIData} />
-      </div>
+          {/* Charts row 2 */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <CallsByHourChart data={kpiData} />
+            <OutcomeDistributionChart data={kpiData} />
+          </div>
+        </>
+      )}
 
       {/* Bottom section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -185,7 +228,7 @@ export default function DashboardPage() {
                               'bg-red-100 text-red-800 border-red-200'
                             }`}
                           >
-                            {t.caseStatus[c.status]}
+                            {t.caseStatus[c.status as keyof typeof t.caseStatus]}
                           </span>
                         </td>
                         <td className="px-4 py-3 hidden md:table-cell">
@@ -196,6 +239,13 @@ export default function DashboardPage() {
                         </td>
                       </tr>
                     ))}
+                    {recentCases.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-400">
+                          {t.cases.noCases}
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
