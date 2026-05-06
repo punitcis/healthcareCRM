@@ -1,10 +1,13 @@
 import { PrismaClient, UserRole, RiskLevel, CaseStatus, FollowUpStatus, ServiceType, CallStatus } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 import { PrismaNeon } from '@prisma/adapter-neon'
+import { Pool, neonConfig } from '@neondatabase/serverless'
+import ws from 'ws'
 import * as dotenv from 'dotenv'
 dotenv.config({ path: '.env.local' })
 
-const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! })
+neonConfig.webSocketConstructor = ws
+const adapter = new PrismaNeon({ connectionString: process.env.DIRECT_URL! })
 const prisma = new PrismaClient({ adapter } as any)
 
 async function main() {
