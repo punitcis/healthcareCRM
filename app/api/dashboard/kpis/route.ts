@@ -9,41 +9,37 @@ export async function GET(req: NextRequest) {
     todayStart.setHours(0, 0, 0, 0)
     const todayEnd = new Date(now)
     todayEnd.setHours(23, 59, 59, 999)
-
-    // totalCalls: cases created today
-    const totalCalls = await prisma.case.count({
-      where: { createdAt: { gte: todayStart, lte: todayEnd } },
-    })
-
-    // highRiskCases: open or follow_up with high or critical risk
-    const highRiskCases = await prisma.case.count({
-      where: {
-        status: { in: [CaseStatus.open, CaseStatus.follow_up] },
-        riskLevel: { in: [RiskLevel.high, RiskLevel.critical] },
-      },
-    })
-
-    // followUpCompliance
-    const completedFollowUps = await prisma.followUp.count({
-      where: { status: 'completed' },
-    })
-    const totalNonCancelledFollowUps = await prisma.followUp.count({
-      where: { status: { not: 'cancelled' } },
-    })
-    const followUpCompliance =
-      totalNonCancelledFollowUps > 0
-        ? Math.round((completedFollowUps / totalNonCancelledFollowUps) * 100 * 10) / 10
-        : 0
-
-    // callsTrend: last 7 days
     const sevenDaysAgo = new Date(now)
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6)
     sevenDaysAgo.setHours(0, 0, 0, 0)
 
-    const recentCases = await prisma.case.findMany({
-      where: { createdAt: { gte: sevenDaysAgo } },
-      select: { createdAt: true },
-    })
+    const [
+      totalCalls,
+      highRiskCases,
+      completedFollowUps,
+      totalNonCancelledFollowUps,
+      recentCases,
+      riskGroups,
+      outcomeGroups,
+    ] = await Promise.all([
+      prisma.case.count({ where: { createdAt: { gte: todayStart, lte: todayEnd } } }),
+      prisma.case.count({
+        where: {
+          status: { in: [CaseStatus.open, CaseStatus.follow_up] },
+          riskLevel: { in: [RiskLevel.high, RiskLevel.critical] },
+        },
+      }),
+      prisma.followUp.count({ where: { status: 'completed' } }),
+      prisma.followUp.count({ where: { status: { not: 'cancelled' } } }),
+      prisma.case.findMany({ where: { createdAt: { gte: sevenDaysAgo } }, select: { createdAt: true } }),
+      prisma.case.groupBy({ by: ['riskLevel'], _count: { riskLevel: true } }),
+      prisma.case.groupBy({ by: ['outcome'], _count: { outcome: true }, where: { outcome: { not: null } } }),
+    ])
+
+    const followUpCompliance =
+      totalNonCancelledFollowUps > 0
+        ? Math.round((completedFollowUps / totalNonCancelledFollowUps) * 100 * 10) / 10
+        : 0
 
     const callsTrend: { date: string; calls: number; abandoned: number }[] = []
     for (let i = 6; i >= 0; i--) {
@@ -52,11 +48,9 @@ export async function GET(req: NextRequest) {
       day.setHours(0, 0, 0, 0)
       const dayEnd = new Date(day)
       dayEnd.setHours(23, 59, 59, 999)
-
       const count = recentCases.filter(
         (c: { createdAt: Date }) => c.createdAt >= day && c.createdAt <= dayEnd
       ).length
-
       callsTrend.push({
         date: day.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' }),
         calls: count,
@@ -64,37 +58,17 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    // callsByRisk: count cases grouped by riskLevel
-    const riskGroups = await prisma.case.groupBy({
-      by: ['riskLevel'],
-      _count: { riskLevel: true },
-    })
-
     const riskColorMap: Record<string, string> = {
-      critical: '#dc2626',
-      high: '#ea580c',
-      moderate: '#d97706',
-      low: '#16a34a',
+      critical: '#dc2626', high: '#ea580c', moderate: '#d97706', low: '#16a34a',
     }
     const riskLabelMap: Record<string, string> = {
-      critical: 'Critico',
-      high: 'Alto',
-      moderate: 'Moderato',
-      low: 'Basso',
+      critical: 'Critico', high: 'Alto', moderate: 'Moderato', low: 'Basso',
     }
-
     const callsByRisk = riskGroups.map((g: any) => ({
       level: riskLabelMap[g.riskLevel] ?? g.riskLevel,
       count: g._count.riskLevel,
       color: riskColorMap[g.riskLevel] ?? '#6b7280',
     }))
-
-    // outcomeDistribution: group by outcome
-    const outcomeGroups = await prisma.case.groupBy({
-      by: ['outcome'],
-      _count: { outcome: true },
-      where: { outcome: { not: null } },
-    })
 
     const outcomeColors = ['#16a34a', '#0891b2', '#dc2626', '#6b7280', '#8b5cf6', '#d97706', '#ea580c']
     const outcomeDistribution = (outcomeGroups as any[])
@@ -105,7 +79,6 @@ export async function GET(req: NextRequest) {
         color: outcomeColors[i % outcomeColors.length],
       }))
 
-    // callsByHour: static reasonable data
     const callsByHour = [
       { hour: '00:00', calls: 3 }, { hour: '01:00', calls: 2 }, { hour: '02:00', calls: 4 },
       { hour: '03:00', calls: 2 }, { hour: '04:00', calls: 1 }, { hour: '05:00', calls: 1 },

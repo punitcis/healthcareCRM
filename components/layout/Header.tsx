@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { signOut } from 'next-auth/react'
 import { Bell, LogOut, User, ChevronDown, Settings, AlertCircle, Globe } from 'lucide-react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -19,6 +19,16 @@ export default function Header({ userName, userRole, alerts = 3 }: HeaderProps) 
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const { lang, setLang, t } = useLanguage()
+  const [dateStr, setDateStr] = useState('')
+
+  useEffect(() => {
+    setDateStr(new Date().toLocaleDateString(lang === 'it' ? 'it-IT' : 'en-GB', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    }))
+  }, [lang])
 
   const initials = userName
     .split(' ')
@@ -43,14 +53,7 @@ export default function Header({ userName, userRole, alerts = 3 }: HeaderProps) 
           <span className="text-sm text-gray-500">{t.common.systemActive}</span>
         </div>
         <span className="text-gray-300">|</span>
-        <span className="text-sm font-medium text-gray-700">
-          {new Date().toLocaleDateString(lang === 'it' ? 'it-IT' : 'en-GB', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-          })}
-        </span>
+        <span className="text-sm font-medium text-gray-700">{dateStr}</span>
       </div>
 
       <div className="flex items-center gap-3">
